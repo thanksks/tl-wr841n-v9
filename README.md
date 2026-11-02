@@ -5,13 +5,13 @@
 This is a write-up of my first hardware hacking project, targeting the TP-Link TL-WR841N (v9.2). I chose this router specifically because of the surplus of documentation on it and figured it would make a great first hardware hacking project. Let's get started!
 
 ### Tools Used:
-Digital Multimeter
-Soldering Kit
-HiLetGo 24MHz 8-Channel USB Logic Analyzer
-DSD TECH SH-U09C5 USB to UART
-## Software Used
+* Digital Multimeter
+* Soldering Kit
+* HiLetGo 24MHz 8-Channel USB Logic Analyzer
+* DSD TECH SH-U09C5 USB to UART
 
-PulseView / sigrok
+### Software Used
+* PulseView / sigrok
 
 ## Getting Inside
 
@@ -21,16 +21,16 @@ I started by unscrewing the bottom two screws hidden behind the rubber feet. The
 
 With the board out, I can see the major components and what else I'm working with. After doing a bit of digging, I identified everything:
 
-Main Chip: **Qualcomm Atheros QCA9533**
-SDRAM: **Zentel A3S56D40GTP-50L** (32MB)
-SPI Flash: **Macronix (MXIC) MX25L3206E** (4MB)
+* Main Chip: **Qualcomm Atheros QCA9533**
+* SDRAM: **Zentel A3S56D40GTP-50L** (32MB)
+* SPI Flash: **Macronix (MXIC) MX25L3206E** (4MB)
 
 There's an unpopulated UART debugging interface at J3. There's no pin labels on the silkscreen like older versions of this router, so I'll solder on pin headers to make measuring via multimeter more convenient.
 
 My measurements suggest that the pins from left-to-right are VCC, GND, RX, and TX. 
 The VCC supplies a constant 3.3V. 
 Second pin tested as ground through continuity. 
-Third pin read a steady 0V. A floating pin with no internal pull-up usually wanders a bit, so a clean 0V suggests a pull-down resistor
+Third pin read a steady 0V. A floating pin with no internal pull-up usually wanders a bit, so a clean 0V suggests a pull-down resistor.
 The final pin I measured it at 2.6V, normal reading during boot for TX transmitting at 115200 baud.
 
 The TL-WR841N is incredibly well documented at 115200 baud, but for certainty (and fun), I'll hook up a logic analyzer to TX and take a look with PulseView.
@@ -43,12 +43,12 @@ Okay... the beginning of this view explains the 2.6V reading from the multimeter
 
 ![Pulseview Start Bit Timing](/images/pulseview_overview.png)
 
-Using PulseView's timing cursors across the start bit measures a bit width of $9\, \mu\text{s}$. A true 115200 baud bit takes $8.68 \, \mu\text{s}$: 
+Using PulseView's timing cursors across the start bit measures a bit width of $9\  \mu\text{s}$. A true 115200 baud bit takes $8.68 \  \mu\text{s}$: 
 
 $$\frac{1}{115200} \approx 8.68 \times 10^{-6}\text{ s}$$
 
 
-However, a 1MHz clock can only read in whole $1\,\mu\text{s}$ steps, so the start bit spanned 9 sample dots (or $\approx 111.1\text{ kHz}$). 
+However, a 1MHz clock can only read in whole $1\  \mu\text{s}$ steps, so the start bit spanned 9 sample dots (or $\approx 111.1\text{ kHz}$). 
 
 With the baud rate confirmed, I set PulseView's UART decoder to ASCII mode and I exported the decoder annotations, resampling at 2 MHz (where the start bit now spans 17 samples):
 
