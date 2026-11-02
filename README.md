@@ -10,7 +10,7 @@ This is a write-up of my first hardware hacking project, targeting the TP-Link T
 * HiLetGo 24MHz 8-Channel USB Logic Analyzer
 * DSD TECH SH-U09C5 USB to UART
 
-### Software Used
+### Software Used:
 * PulseView / sigrok
 
 ## Getting Inside
@@ -41,7 +41,7 @@ The TL-WR841N is incredibly well documented at 115200 baud, but for certainty (a
 
 Okay... the beginning of this view explains the 2.6V reading from the multimeter. Looks like the TX line idles at high 3.3V and fires bursts of 0V pulses as the bootloader gets started. The multimeter averages the two out. Let's try to calculate baud rate now by zooming in a bit.
 
-![Pulseview Start Bit Timing](/images/pulseview_overview.png)
+![Pulseview Start Bit Timing](/images/pulseview_zoomed.png)
 
 Using PulseView's timing cursors across the start bit measures a bit width of $9\  \mu\text{s}$. A true 115200 baud bit takes $8.68 \  \mu\text{s}$: 
 
