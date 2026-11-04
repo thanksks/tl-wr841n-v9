@@ -15,9 +15,17 @@ This is a write-up of my first hardware hacking project, targeting the TP-Link T
 
 ## Getting Inside
 
+| ![Top Housing](images/housing_top.jpg) | ![Bottom Housing](images/housing_bottom.jpg) |
+| :------------------------------------: | :------------------------------------------: |
+*Top and bottom view of housing*
+
 I started by unscrewing the bottom two screws hidden behind the rubber feet. The bottom part of the housing is also secured by clips. I found it easiest to force my way inside near the Ethernet ports on the back of the router.
 
 ## Inside The Router
+
+<p align="center">
+  <img src="images/inside_fullview.jpg" alt="Full PCB View" width="500">
+</p>
 
 With the board out, I can see the major components and what else I'm working with. After doing a bit of digging, I identified everything:
 
@@ -25,7 +33,15 @@ With the board out, I can see the major components and what else I'm working wit
 * SDRAM: **Zentel A3S56D40GTP-50L** (32MB)
 * SPI Flash: **Macronix (MXIC) MX25L3206E** (4MB)
 
+| ![Main Chip](images/mainChip_closeup.jpg) | ![SDRAM](images/SDRAM_closeup.jpg) |
+| :---------------------------------------: | :--------------------------------: |
+*Closeups of main chip and SDRAM*
+
 There's an unpopulated UART debugging interface at J3. There's no pin labels on the silkscreen like older versions of this router, so I'll solder on pin headers to make measuring via multimeter more convenient.
+
+| ![J3 Closeup](images/J3_closeup.jpg) | ![UART Headers](images/UART_headers.jpg) |
+| :----------------------------------: | :--------------------------------------: |
+*J3 pre and post surgery*
 
 My measurements suggest that the pins from left-to-right are VCC, GND, RX, and TX. 
 The VCC supplies a constant 3.3V. 
