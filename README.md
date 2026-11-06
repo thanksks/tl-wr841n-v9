@@ -2,8 +2,13 @@
 # TP-Link TL-WR841N Router (v9.2)
 
 
-This is a write-up of my first hardware hacking project, targeting the TP-Link TL-WR841N (v9.2). I chose this router specifically because of the surplus of documentation on it and figured it would make a great first hardware hacking project. Let's get started!
+This is a write-up of my first hardware hacking project, targeting the TP-Link TL-WR841N (v9.2). I chose this router specifically because of the surplus of documentation on it and figured it would make a great first hardware hacking project.
 
+My goals for this project: 
+1) Identify the hardware and locate the debug interface 
+2) Capture and read the boot log over UART 
+3) Get a root shell
+4) Dump the SPI flash and analyze the firmware
 ### Tools Used:
 * Digital Multimeter
 * Soldering Kit
@@ -39,37 +44,35 @@ With the board out, I can see the major components and what else I'm working wit
 
 *Closeups of main chip and SDRAM*
 
-There's an unpopulated UART debugging interface at J3. There's no pin labels on the silkscreen like older versions of this router, so I'll solder on pin headers to make measuring via multimeter more convenient.
+There's an unpopulated UART debugging interface at J3. There are no pin labels on the silkscreen like older versions of this router, so I'll solder on pin headers to make measuring via multimeter more convenient.
 
 | ![J3 Closeup](images/J3_closeup.JPG) | ![UART Headers](images/UART_headers.JPG) |
 | :----------------------------------: | :--------------------------------------: |
 
-*J3 pre and post surgery*
+*UART port at J3, pre and post surgery*
 
-My measurements suggest that the pins from left-to-right are VCC, GND, RX, and TX. 
-The VCC supplies a constant 3.3V. 
-Second pin tested as ground through continuity. 
-Third pin read a steady 0V. A floating pin with no internal pull-up usually wanders a bit, so a clean 0V suggests a pull-down resistor.
-The final pin I measured it at 2.6V, normal reading during boot for TX transmitting at 115200 baud.
+My measurements suggest that the pins from left-to-right are VCC, GND, RX, and TX:
+* VCC supplies a constant 3.3V
+* GND through continuity
+* RX: steady 0V. A floating pin usually wanders, so a clean 0V suggests a pull-down resistor
+* TX: 2.6V average on boot (I explain below)
 
-The TL-WR841N is incredibly well documented at 115200 baud, but for certainty (and fun), I'll hook up a logic analyzer to TX and take a look with PulseView.
+The TL-WR841N is incredibly well documented at 115,200 baud, but for certainty (and fun), I'll hook up a logic analyzer to TX and take a look with PulseView.
 
-*(Note: In PulseView, I left the decoder channel label set to its default RX name, though it is probing the router's TX pin)*
+## Pulseview
+
+*(Note: In PulseView, I left the decoder channel label set to its default RX name, but it is probing the router's TX pin)*
 
 ![PulseView Overview](images/pulseview_overview.png)
 
-Okay... the beginning of this view explains the 2.6V reading from the multimeter. Looks like the TX line idles at high 3.3V and fires bursts of 0V pulses as the bootloader gets started. The multimeter averages the two out. Let's try to calculate baud rate now by zooming in a bit.
+Looks like the line idles high at 3.3 V and sends bursts of 0 V pulses during boot, which is consistent with the 2.6 V average my multimeter showed me.
 
-![Pulseview Start Bit Timing](/images/pulseview_zoomed.png)
+And the console decodes cleanly at 115,200. To check the rate, I measured the start-bit width with the cursors and the spacing between back-to-back frames at 1, 2 and 4 MHz capture rates. The 4 MHz results (8.25 µs start bit) suggest an actual rate of around 120,000 baud, about 4% faster than normal. I haven’t determined whether that comes from the chip's clock or my analyzer’s clock. Regardless, the UART receiver tolerates this much error and still decodes.
 
-Using PulseView's timing cursors across the start bit measures a bit width of $9\  \mu\text{s}$. A true 115200 baud bit takes $8.68 \  \mu\text{s}$: 
-
-$$\frac{1}{115200} \approx 8.68 \times 10^{-6}\text{ s}$$
+![Pulseview Start Bit Timing](images/pulseview_zoomed.png)
 
 
-However, a 1MHz clock can only read in whole $1\  \mu\text{s}$ steps, so the start bit spanned 9 sample dots (or $\approx 111.1\text{ kHz}$). 
-
-With the baud rate confirmed, I set PulseView's UART decoder to ASCII mode and I exported the decoder annotations, resampling at 2 MHz (where the start bit now spans 17 samples):
+I set PulseView's UART decoder to ASCII mode and I exported the decoder annotations from the **2MHz** capture:
 
 ```text
 4537-4554 UART: RX: Start bit
@@ -87,9 +90,9 @@ With the baud rate confirmed, I set PulseView's UART decoder to ASCII mode and I
 2281769-2281786 UART: RX: Stop bit
 ```
 
-(These are just 12 lines from a sample that had 3702... you can [view the full sample here](UART.txt))
+*(These are just 12 lines from a sample that had 3702 total lines- you can [see the full sample here](UART.txt))*
 
-The first few bytes (`[01]`, `[D4]`) are garbage as the board powers up. Real text starts later at around 1.14 seconds (`sample 2281630`), starting with `U`.
+The first few bytes (`[01]`, `[D4]`) are probably just noise as the board powers up. Then follows a few more garbage bytes and a double carriage-return + line-feed (`[0D] [0A]`), before actual text appears, at around 1.14 seconds (`sample 2281630`), starting with the first `U` of `U-Boot`.
 
 To strip out the `Start bit`/`Stop bit` lines and sample timestamps, I ran this single line in my Linux terminal:
 
@@ -154,15 +157,15 @@ Autobooting in 1 seconds
 
 From this capture, I learn several key things before even opening a serial terminal:
 
-* The router runs U-Boot 1.1.4, and `ap143` ("Honey Bee") identifies the Qualcomm Atheros reference board and QCA9533 chip family
+* The router runs U-Boot 1.1.4, and `ap143` is the Qualcomm Atheros reference board and "Honey Bee" is the codename for the chip family
 * U-Boot reports `DRAM: 32 MB` and `Flash: 4 MB`, which corresponds to the hardware I identified earlier (`0xc2` is Macronix's manufacturer code)
-* U-Boot gives a 1-second interruption window (`Autobooting in 1 seconds`) before booting the Linux kernel located at memory address **`0x9f020000`**
-* The Atheros misspells `STATUS` as `STAUS` per its source code (lol)
+* U-Boot suggests a 1-second interruption window (`Autobooting in 1 seconds`) before booting the Linux kernel image located at flash address **`0x9f020000`**
+* The Atheros misspells `STATUS` as `STAUS` (lol)
 
 ### Current Status & Next Steps
-* **Next up:** Hook up the USB-to-UART adapter to verify the `RX` pin with live keystrokes, explore the root shell, map the flash partitions, and dump the firmware.
+* Goals 1 and 2 are done, working on 3 (gaining root shell)
 
 ### References & Inspiration
 * [OpenWrt TP-Link TL-WR841N Wiki](https://openwrt.org/toh/tp-link/tl-wr841nd)
-* VoidStar Security Hardware Hacking Roadmap
-* Past WR841N hardware research by Zero Day Initiative (ZDI) & write-ups I found by adamhlt and JulianOzelRose
+* [VoidStar Security Hardware Hacking Roadmap](https://voidstarsec.com/roadmap/)
+* Past WR841N hardware research by [Zero Day Initiative (ZDI)](https://www.zerodayinitiative.com/blog/2019/9/2/mindshare-hardware-reversing-with-the-tp-link-tl-wr841n-router) & excellent write-ups by [adamhlt](https://github.com/adamhlt/TL-WR841N) and [JulianOzelRose](https://github.com/JulianOzelRose/TL-WR841N-v14)
